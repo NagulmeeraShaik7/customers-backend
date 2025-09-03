@@ -1,12 +1,31 @@
 import { getDb } from '../models/customer.model.mjs';
 
+/**
+ * Repository class for interacting with the `customers` and `addresses` tables in SQLite.
+ * Provides CRUD operations, address management, and duplicate checks.
+ */
 class CustomerRepository {
-  // Always fetch the latest db
+  /**
+   * Always fetch the latest DB connection.
+   * @type {import('better-sqlite3').Database}
+   */
   get db() {
     return getDb();
   }
 
   // ---------- Customer CRUD ----------
+
+  /**
+   * Create a new customer.
+   * @param {Object} data - Customer data.
+   * @param {string} data.firstName - Customer's first name.
+   * @param {string} data.lastName - Customer's last name.
+   * @param {string} data.phone - Unique phone number.
+   * @param {string} [data.email] - Optional email address.
+   * @param {string} [data.accountType='standard'] - Account type.
+   * @param {boolean} [data.hasOnlyOneAddress=false] - Whether customer has only one address.
+   * @returns {Object} The newly created customer with addresses.
+   */
   createCustomer(data) {
     const stmt = this.db.prepare(`
       INSERT INTO customers (firstName, lastName, phone, email, accountType, hasOnlyOneAddress)
@@ -19,6 +38,11 @@ class CustomerRepository {
     return this.getCustomerById(info.lastInsertRowid);
   }
 
+  /**
+   * Get a customer by ID.
+   * @param {number} id - Customer ID.
+   * @returns {Object|null} Customer object with addresses or `null` if not found.
+   */
   getCustomerById(id) {
     const row = this.db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id);
     if (!row) return null;
@@ -29,6 +53,12 @@ class CustomerRepository {
     return row;
   }
 
+  /**
+   * Update a customer by ID.
+   * @param {number} id - Customer ID.
+   * @param {Object} patch - Fields to update.
+   * @returns {Object|null} Updated customer object or `null` if not found.
+   */
   updateCustomer(id, patch) {
     const fields = [];
     const params = { id };
@@ -45,11 +75,22 @@ class CustomerRepository {
     return this.getCustomerById(id);
   }
 
+  /**
+   * Delete a customer by ID.
+   * @param {number} id - Customer ID.
+   * @returns {boolean} True if deleted, false otherwise.
+   */
   deleteCustomer(id) {
     const info = this.db.prepare(`DELETE FROM customers WHERE id = ?`).run(id);
     return info.changes > 0;
   }
 
+  /**
+   * Count customers with optional filtering.
+   * @param {string} [filterQuery] - SQL WHERE conditions (without 'WHERE').
+   * @param {Object} [params] - Parameters for the SQL query.
+   * @returns {number} Number of matching customers.
+   */
   countCustomers(filterQuery, params) {
     const where = filterQuery ? `WHERE ${filterQuery}` : '';
     const row = this.db.prepare(
@@ -61,6 +102,17 @@ class CustomerRepository {
     return row ? row.cnt : 0;
   }
 
+  /**
+   * Find customers with filtering, sorting, and pagination.
+   * @param {Object} options - Search options.
+   * @param {string} [options.filterQuery] - SQL WHERE conditions.
+   * @param {Object} [options.params] - Parameters for filtering.
+   * @param {string} [options.sortBy='createdAt'] - Column to sort by.
+   * @param {'ASC'|'DESC'} [options.sortDir='DESC'] - Sort direction.
+   * @param {number} [options.limit=10] - Max number of results.
+   * @param {number} [options.offset=0] - Offset for pagination.
+   * @returns {Object[]} Array of customer objects with addresses.
+   */
   findCustomers({ filterQuery = '', params = {}, sortBy = 'createdAt', sortDir = 'DESC', limit = 10, offset = 0 }) {
     const q = `
       SELECT DISTINCT customers.* FROM customers
@@ -80,6 +132,22 @@ class CustomerRepository {
   }
 
   // ---------- Address operations ----------
+
+  /**
+   * Add an address for a customer.
+   * If `isPrimary` is true, existing addresses will be unmarked as primary.
+   * @param {number} customerId - Customer ID.
+   * @param {Object} address - Address data.
+   * @param {string} address.line1 - First address line.
+   * @param {string} [address.line2] - Second address line.
+   * @param {string} address.city - City.
+   * @param {string} address.state - State.
+   * @param {string} [address.country='India'] - Country.
+   * @param {string} address.pincode - Postal code.
+   * @param {boolean} [address.isPrimary=false] - Whether this is the primary address.
+   * @param {string} [address.status='active'] - Address status.
+   * @returns {Object} Updated customer with addresses.
+   */
   addAddress(customerId, address) {
     const tx = this.db.transaction((customerId, address) => {
       if (address.isPrimary) {
@@ -104,6 +172,14 @@ class CustomerRepository {
     return tx(customerId, address);
   }
 
+  /**
+   * Update an existing address.
+   * If `isPrimary` is set to true, all other addresses for the customer will be unmarked.
+   * @param {number} customerId - Customer ID.
+   * @param {number} addressId - Address ID.
+   * @param {Object} patch - Fields to update.
+   * @returns {Object} Updated customer with addresses.
+   */
   updateAddress(customerId, addressId, patch) {
     const tx = this.db.transaction((customerId, addressId, patch) => {
       if (patch.isPrimary === true) {
@@ -130,6 +206,12 @@ class CustomerRepository {
     return tx(customerId, addressId, patch);
   }
 
+  /**
+   * Delete a customer's address.
+   * @param {number} customerId - Customer ID.
+   * @param {number} addressId - Address ID.
+   * @returns {Object} Updated customer with remaining addresses.
+   */
   deleteAddress(customerId, addressId) {
     const tx = this.db.transaction((customerId, addressId) => {
       this.db.prepare(`DELETE FROM addresses WHERE id = ? AND customerId = ?`).run(addressId, customerId);
@@ -143,6 +225,14 @@ class CustomerRepository {
     return tx(customerId, addressId);
   }
 
+  /**
+   * Mark whether a customer should be flagged as having only one address.
+   * Enforces constraints: can only mark true if exactly one exists, and false if multiple exist.
+   * @param {number} customerId - Customer ID.
+   * @param {boolean} value - Flag value.
+   * @throws {Error & {status:number}} If conditions are not met.
+   * @returns {Object} Updated customer object.
+   */
   markOnlyOneAddress(customerId, value) {
     const cnt = this.db.prepare(`SELECT COUNT(*) as c FROM addresses WHERE customerId = ?`).get(customerId).c;
     if (value === true && cnt !== 1) {
@@ -158,9 +248,21 @@ class CustomerRepository {
   }
 
   // ---------- Duplicate checks ----------
+
+  /**
+   * Check if a customer exists by phone number.
+   * @param {string} phone - Phone number.
+   * @returns {boolean} True if exists, false otherwise.
+   */
   existsByPhone(phone) {
     return !!this.db.prepare(`SELECT 1 FROM customers WHERE phone = ? LIMIT 1`).get(phone);
   }
+
+  /**
+   * Check if a customer exists by email.
+   * @param {string} email - Email address.
+   * @returns {boolean} True if exists, false otherwise.
+   */
   existsByEmail(email) {
     if (!email) return false;
     return !!this.db.prepare(`SELECT 1 FROM customers WHERE email = ? LIMIT 1`).get(email);

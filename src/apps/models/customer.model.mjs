@@ -4,6 +4,23 @@ import path from 'path';
 
 let db;
 
+/**
+ * Initialize the SQLite database.
+ *
+ * - Ensures the database directory exists.
+ * - Opens (or creates) the database file.
+ * - Enables foreign key constraints.
+ * - Creates required tables (`customers`, `addresses`) if they do not exist.
+ * - Adds useful indexes for performance.
+ *
+ * @param {string} [dbPath=process.env.SQLITE_FILE || 'src/data/customers.db']
+ *   Path to the SQLite database file. Defaults to `SQLITE_FILE` env variable or `src/data/customers.db`.
+ * @returns {Database} An initialized Better-SQLite3 database instance.
+ *
+ * @example
+ * import { initDb } from './db.js';
+ * const db = initDb(); // initializes database
+ */
 export function initDb(dbPath = process.env.SQLITE_FILE || 'src/data/customers.db') {
   // Always resolve to absolute path
   const absPath = path.resolve(dbPath);
@@ -62,6 +79,16 @@ export function initDb(dbPath = process.env.SQLITE_FILE || 'src/data/customers.d
   return db;
 }
 
+/**
+ * Get the active database instance.
+ *
+ * @returns {Database} The active Better-SQLite3 database instance.
+ * @throws {Error} If the database has not been initialized with {@link initDb}.
+ *
+ * @example
+ * import { getDb } from './db.js';
+ * const db = getDb(); // throws if initDb() not called first
+ */
 export function getDb() {
   if (!db) throw new Error('Database not initialized. Call initDb() first.');
   return db;
